@@ -40,7 +40,6 @@ function resetWeeklyIfNewWeek() {
   const todayStr = today.toISOString().slice(0, 10);
 
   if (lastActive !== todayStr) {
-    // Check if the last active date was in a different ISO week
     const lastDate = lastActive ? new Date(lastActive + 'T00:00:00') : null;
     if (lastDate) {
       const getWeekNumber = (d) => {
@@ -58,20 +57,15 @@ function resetWeeklyIfNewWeek() {
       const thisWeek = getWeekNumber(today);
       const lastYear = lastDate.getFullYear();
       const thisYear = today.getFullYear();
-
-      // New week — reset weekly data
       if (lastWeek !== thisWeek || lastYear !== thisYear) {
         return [0, 0, 0, 0, 0, 0, 0];
       }
     }
-    // Update last active date
     saveToStorage(STORAGE_KEYS.LAST_ACTIVE_DATE, todayStr);
   } else {
-    // Same day — ensure date is stored
     saveToStorage(STORAGE_KEYS.LAST_ACTIVE_DATE, todayStr);
   }
 
-  // Return stored or fresh data
   const stored = loadFromStorage(STORAGE_KEYS.WEEKLY_DATA, null);
   return stored !== null ? stored : [0, 0, 0, 0, 0, 0, 0];
 }
@@ -83,12 +77,15 @@ const savedGoalMinutes = loadFromStorage(STORAGE_KEYS.GOAL_MINUTES, 10);
 const savedWeekly = resetWeeklyIfNewWeek();
 
 const state = {
-  // Timer state
   isRunning: false,
   isPaused: false,
   isResting: false,
   totalSeconds: 0,
   elapsedSeconds: 0,
+  /** Timestamp (ms) when the current running segment started */
+  segmentStartTimestamp: 0,
+  /** Accumulated seconds before the current segment */
+  accumulatedSeconds: 0,
   goalMinutes: savedGoalMinutes,
   goalSeconds: savedGoalMinutes * 60,
   timerInterval: null,
@@ -99,7 +96,7 @@ const state = {
   calories: 0,
   steps: 0,
   heartRate: 72,
-  totalDistance: 0,   // meters
+  totalDistance: 0,
   paceMinutes: 0,
   paceSeconds: 0,
 
@@ -119,47 +116,30 @@ const state = {
 // ============================================================
 const $ = (id) => document.getElementById(id);
 const els = {
-  // Loading
   loadingScreen: $('loadingScreen'),
-
-  // Timer
   timerDisplay: $('timerDisplay'),
   timerStatus: $('timerStatus'),
   timerRing: $('timerRing'),
   pulseRing: $('pulseRing'),
-
-  // Goal
   goalChips: document.querySelectorAll('.goal-chip'),
   goalPercent: $('goalPercent'),
   goalProgressFill: $('goalProgressFill'),
-
-  // Buttons
   btnStart: $('btnStart'),
   btnStop: $('btnStop'),
   btnRest: $('btnRest'),
   btnResume: $('btnResume'),
   btnFinishRest: $('btnFinishRest'),
-
-  // Analytics
   caloriesValue: $('caloriesValue'),
   stepsValue: $('stepsValue'),
   heartRateValue: $('heartRateValue'),
   paceValue: $('paceValue'),
-
-  // Rest
   restOverlay: $('restOverlay'),
   restCountdown: $('restCountdown'),
   restProgressFill: $('restProgressFill'),
-
-  // Notification
   minuteNotif: $('minuteNotif'),
   notifTime: $('notifTime'),
-
-  // Navigation
   navItems: document.querySelectorAll('.nav-item'),
   pages: document.querySelectorAll('.page'),
-
-  // Chart
   weeklyChart: $('weeklyChart'),
 };
 
@@ -170,14 +150,11 @@ function injectTimerGradient() {
   const svg = document.querySelector('.timer-ring-svg');
   if (!svg) return;
 
-  // Check if defs already exist
   let defs = svg.querySelector('defs');
   if (!defs) {
     defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
     svg.prepend(defs);
   }
-
-  // Check if gradient already exists
   if (defs.querySelector('#timerGradient')) return;
 
   const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
@@ -213,28 +190,23 @@ function hideLoadingScreen() {
 // TIMER FUNCTIONS
 // ============================================================
 
-/** Format seconds to MM:SS */
 function formatTime(seconds) {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-/** Get the circumference for the progress ring (r=88 -> 2*PI*88 ≈ 553.1) */
-const CIRCUMFERENCE = 2 * Math.PI * 88; // ~553.1
+const CIRCUMFERENCE = 2 * Math.PI * 88;
 
-/** Update the circular progress ring */
 function updateTimerRing(progress) {
   const offset = CIRCUMFERENCE - (progress * CIRCUMFERENCE);
   els.timerRing.style.strokeDashoffset = offset;
 }
 
-/** Update timer display */
 function updateTimerDisplay() {
   els.timerDisplay.textContent = formatTime(state.elapsedSeconds);
 }
 
-/** Update goal progress */
 function updateGoalProgress() {
   const progress = state.elapsedSeconds / state.goalSeconds;
   const percent = Math.min(100, Math.round(progress * 100));
@@ -243,17 +215,13 @@ function updateGoalProgress() {
   updateTimerRing(Math.min(1, progress));
 }
 
-/** Update analytics in real time */
 function updateAnalytics() {
-  // Calories: ~0.12 per second (moderate running)
   state.calories = Math.round(state.elapsedSeconds * 0.12);
   els.caloriesValue.textContent = state.calories;
 
-  // Steps: ~1.6 per second (approx 3 steps per 2 seconds)
   state.steps = Math.round(state.elapsedSeconds * 1.6);
   els.stepsValue.textContent = state.steps;
 
-  // Heart Rate: simulate realistic variance
   if (state.isRunning && state.elapsedSeconds > 0) {
     const base = 120;
     const variance = Math.sin(state.elapsedSeconds * 0.1) * 8;
@@ -261,9 +229,8 @@ function updateAnalytics() {
     els.heartRateValue.textContent = state.heartRate;
   }
 
-  // Avg Pace: based on distance covered (assuming ~2m/s)
   if (state.elapsedSeconds > 0) {
-    const distanceKm = state.elapsedSeconds * 0.002; // 2m/s -> 0.002km/s
+    const distanceKm = state.elapsedSeconds * 0.002;
     if (distanceKm > 0) {
       const paceSecondsPerKm = state.elapsedSeconds / distanceKm;
       state.paceMinutes = Math.floor(paceSecondsPerKm / 60);
@@ -273,7 +240,6 @@ function updateAnalytics() {
   }
 }
 
-/** Check for 1-minute milestones */
 function checkMinuteMilestone() {
   const currentMinute = Math.floor(state.elapsedSeconds / 60);
   if (currentMinute > state.minuteCount && currentMinute >= 1) {
@@ -284,17 +250,41 @@ function checkMinuteMilestone() {
   }
 }
 
-/** Toggle pulse ring animation */
 function setPulseRing(active) {
   els.pulseRing.classList.toggle('active', active);
 }
 
 // ============================================================
-// MAIN TIMER LOOP
+// REAL-TIME ELAPSED CALCULATION
+// ============================================================
+/**
+ * Recalculate elapsedSeconds from the accumulated base + wall-clock time.
+ * This ensures the timer advances correctly even after iPhone lock,
+ * since setInterval freezes but Date.now() advances.
+ */
+function recalcElapsed() {
+  if (state.isRunning && !state.isPaused && state.segmentStartTimestamp > 0) {
+    const now = Date.now();
+    const elapsedThisSegment = Math.floor((now - state.segmentStartTimestamp) / 1000);
+    state.elapsedSeconds = state.accumulatedSeconds + elapsedThisSegment;
+  }
+}
+
+// ============================================================
+// TIMER PERSISTENCE
 // ============================================================
 function saveTimerState() {
+  recalcElapsed();
+
+  // Floor to goal limit
+  if (state.elapsedSeconds >= state.goalSeconds) {
+    state.elapsedSeconds = state.goalSeconds;
+  }
+
   saveToStorage(STORAGE_KEYS.TIMER_STATE, {
     elapsedSeconds: state.elapsedSeconds,
+    accumulatedSeconds: state.accumulatedSeconds,
+    segmentStartTimestamp: state.segmentStartTimestamp,
     isRunning: state.isRunning,
     isPaused: state.isPaused,
     minuteCount: state.minuteCount,
@@ -306,16 +296,28 @@ function saveTimerState() {
 
 function clearTimerState() {
   localStorage.removeItem(STORAGE_KEYS.TIMER_STATE);
+  state.segmentStartTimestamp = 0;
+  state.accumulatedSeconds = 0;
 }
 
+// ============================================================
+// MAIN TIMER LOOP
+// ============================================================
 function tick() {
-  state.elapsedSeconds++;
+  // Recalculate elapsed from real wall-clock time
+  recalcElapsed();
+
+  // Cap to goal
+  if (state.elapsedSeconds >= state.goalSeconds) {
+    state.elapsedSeconds = state.goalSeconds;
+  }
+
   updateTimerDisplay();
   updateGoalProgress();
   updateAnalytics();
   checkMinuteMilestone();
 
-  // Persist timer state every second
+  // Persist timer state every tick
   saveTimerState();
 
   // Check if goal reached
@@ -324,7 +326,7 @@ function tick() {
     els.timerStatus.textContent = 'Goal Reached! 🎉';
     els.timerDisplay.textContent = formatTime(state.goalSeconds);
     playCompleteSound();
-    showMinuteNotification(); // Show completion notification
+    showMinuteNotification();
   }
 }
 
@@ -333,8 +335,12 @@ function startTimer() {
 
   state.isRunning = true;
   state.isPaused = false;
-  state.minuteCount = 0;
-  state.lastMinuteMark = 0;
+  state.minuteCount = Math.floor(state.elapsedSeconds / 60);
+  state.lastMinuteMark = state.minuteCount * 60;
+
+  // Record the start of this running segment
+  state.segmentStartTimestamp = Date.now();
+  state.accumulatedSeconds = state.elapsedSeconds;
 
   // Update UI
   els.timerStatus.textContent = 'Keep Running';
@@ -350,7 +356,6 @@ function startTimer() {
   els.btnRest.disabled = false;
   setPulseRing(true);
 
-  // If resuming from pause, don't reset elapsed
   if (state.elapsedSeconds === 0) {
     state.totalSeconds = 0;
     state.calories = 0;
@@ -360,12 +365,16 @@ function startTimer() {
     els.paceValue.textContent = "--'--\"";
   }
 
-  // Start interval
   state.timerInterval = setInterval(tick, 1000);
 }
 
 function pauseTimer() {
   if (!state.isRunning || state.isPaused) return;
+
+  // Freeze the accumulated time
+  recalcElapsed();
+  state.accumulatedSeconds = state.elapsedSeconds;
+  state.segmentStartTimestamp = 0;
 
   state.isPaused = true;
   clearInterval(state.timerInterval);
@@ -379,12 +388,17 @@ function pauseTimer() {
     <span>Resume</span>
   `;
   setPulseRing(false);
+  saveTimerState();
 }
 
 function resumeTimer() {
   if (!state.isPaused) return;
 
+  // Start a new segment
+  state.segmentStartTimestamp = Date.now();
+  state.accumulatedSeconds = state.elapsedSeconds;
   state.isPaused = false;
+
   els.timerStatus.textContent = 'Keep Running';
   els.btnStart.innerHTML = `
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -407,6 +421,8 @@ function stopTimer() {
   state.isPaused = false;
   state.isResting = false;
 
+  recalcElapsed();
+
   els.timerStatus.textContent = 'Ready';
   els.timerDisplay.textContent = '00:00';
   els.btnStart.innerHTML = `
@@ -421,8 +437,11 @@ function stopTimer() {
   setPulseRing(false);
   els.restOverlay.classList.remove('active');
 
-  // Reset state
+  const finalElapsed = state.elapsedSeconds;
+
   state.elapsedSeconds = 0;
+  state.accumulatedSeconds = 0;
+  state.segmentStartTimestamp = 0;
   state.minuteCount = 0;
   state.calories = 0;
   state.steps = 0;
@@ -433,13 +452,13 @@ function stopTimer() {
   updateGoalProgress();
   updateAnalytics();
 
-  // Save session to weekly data
-  saveSessionToWeekly();
+  const sessionMinutes = Math.round(finalElapsed / 60);
+  if (sessionMinutes > 0) {
+    saveSessionToWeekly(sessionMinutes);
+  }
 
-  // Clear persisted timer state
   clearTimerState();
 
-  // Play completion sound & show notification
   playCompleteSound();
   showFinishNotification();
 }
@@ -450,6 +469,11 @@ function stopTimer() {
 function enterRestMode() {
   if (!state.isRunning || state.isResting) return;
 
+  // Freeze accumulated time
+  recalcElapsed();
+  state.accumulatedSeconds = state.elapsedSeconds;
+  state.segmentStartTimestamp = 0;
+
   state.isResting = true;
   state.restSeconds = 30;
   clearInterval(state.timerInterval);
@@ -459,6 +483,7 @@ function enterRestMode() {
   els.restOverlay.classList.add('active');
   els.restCountdown.textContent = formatTime(state.restSeconds);
   els.restProgressFill.style.width = '0%';
+  saveTimerState();
 
   state.restInterval = setInterval(() => {
     state.restSeconds--;
@@ -482,8 +507,11 @@ function exitRestMode() {
 
   els.restOverlay.classList.remove('active');
 
-  // Resume the timer
+  // Resume — start a new segment
   state.isPaused = false;
+  state.segmentStartTimestamp = Date.now();
+  state.accumulatedSeconds = state.elapsedSeconds;
+
   els.timerStatus.textContent = 'Keep Running';
   els.btnStart.innerHTML = `
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -518,41 +546,75 @@ function showMinuteNotification() {
 }
 
 // ============================================================
-// SOUND SYSTEM (HTML Audio with MP3 files)
+// SOUND SYSTEM (iOS-compatible Web Audio API)
 // ============================================================
+let audioCtx = null;
 
-/** 
- * Play an mp3 sound from the assets/sounds directory.
- * @param {string} filename - The mp3 filename (e.g. 's4.mp3' or 'complete.mp3')
- */
-function playSound(filename) {
-  try {
-    const audio = new Audio(`assets/sounds/${filename}`);
-    audio.volume = 0.7;
-    audio.play().catch(() => {
-      // Silently fail if audio can't play (autoplay policy, etc.)
-    });
-  } catch (e) {
-    // Silently fail if audio not available
-    console.log('Sound not available:', filename);
+function ensureAudioContext() {
+  if (!audioCtx) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      return false;
+    }
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  return !!audioCtx;
+}
+
+function playMP3(url) {
+  const ctxReady = ensureAudioContext();
+  
+  if (ctxReady && audioCtx) {
+    fetch(url)
+      .then(res => {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.arrayBuffer();
+      })
+      .then(buffer => audioCtx.decodeAudioData(buffer))
+      .then(audioBuffer => {
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioCtx.destination);
+        source.start(0);
+      })
+      .catch(() => {
+        try {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.type = 'sine';
+          osc.frequency.value = 660;
+          gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+          osc.start(0);
+          osc.stop(audioCtx.currentTime + 0.3);
+        } catch (_) {}
+      });
+  } else {
+    try {
+      const audio = new Audio(url);
+      audio.volume = 0.5;
+      audio.play().catch(() => {});
+    } catch (_) {}
   }
 }
 
-/** Play the 1-minute milestone sound */
 function playBeepSound() {
-  playSound('s4.mp3');
+  playMP3('assets/sounds/s4.mp3');
 }
 
-/** Play the session complete / goal reached sound */
 function playCompleteSound() {
-  playSound('complete.mp3');
+  playMP3('assets/sounds/complete.mp3');
 }
 
 // ============================================================
 // FINISH NOTIFICATION
 // ============================================================
 function showFinishNotification() {
-  // Show a brief finish card
   const finishNotif = document.createElement('div');
   finishNotif.className = 'minute-notification active';
   finishNotif.style.top = '50%';
@@ -580,14 +642,11 @@ function showFinishNotification() {
 // ============================================================
 // WEEKLY DATA & CHART
 // ============================================================
-function saveSessionToWeekly() {
-  const today = new Date().getDay(); // 0=Sun, 1=Mon...
-  const idx = today === 0 ? 6 : today - 1; // Convert to Mon=0..Sun=6
-  // Each session adds roughly the number of minutes run
-  const sessionMinutes = Math.round(state.elapsedSeconds / 60);
+function saveSessionToWeekly(sessionMinutes) {
+  const today = new Date().getDay();
+  const idx = today === 0 ? 6 : today - 1;
   state.weeklyData[idx] += sessionMinutes;
 
-  // Persist weekly data & last active date
   saveToStorage(STORAGE_KEYS.WEEKLY_DATA, state.weeklyData);
   saveToStorage(STORAGE_KEYS.LAST_ACTIVE_DATE, new Date().toISOString().slice(0, 10));
 
@@ -622,10 +681,7 @@ function initChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      animation: {
-        duration: 800,
-        easing: 'easeOutQuart',
-      },
+      animation: { duration: 800, easing: 'easeOutQuart' },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -643,23 +699,12 @@ function initChart() {
       scales: {
         x: {
           grid: { display: false },
-          ticks: {
-            color: '#A3A386',
-            font: { size: 11, weight: '500' },
-            maxRotation: 0,
-          },
+          ticks: { color: '#A3A386', font: { size: 11, weight: '500' }, maxRotation: 0 },
         },
         y: {
           beginAtZero: true,
-          grid: {
-            color: 'rgba(163, 163, 134, 0.12)',
-            drawBorder: false,
-          },
-          ticks: {
-            color: '#A3A386',
-            font: { size: 11 },
-            stepSize: 10,
-          },
+          grid: { color: 'rgba(163, 163, 134, 0.12)', drawBorder: false },
+          ticks: { color: '#A3A386', font: { size: 11 }, stepSize: 10 },
         },
       },
     },
@@ -677,7 +722,6 @@ function updateChart() {
 // GOAL CHIPS
 // ============================================================
 function initGoalChips() {
-  // Restore active chip from saved preference
   els.goalChips.forEach((chip) => {
     const mins = parseInt(chip.dataset.minutes, 10);
     if (mins === state.goalMinutes) {
@@ -689,21 +733,17 @@ function initGoalChips() {
 
   els.goalChips.forEach((chip) => {
     chip.addEventListener('click', () => {
-      if (state.isRunning) return; // Can't change goal mid-run
+      if (state.isRunning) return;
 
-      // Update active state
       els.goalChips.forEach((c) => c.classList.remove('active'));
       chip.classList.add('active');
 
-      // Update goal
       state.goalMinutes = parseInt(chip.dataset.minutes, 10);
       state.goalSeconds = state.goalMinutes * 60;
       state.elapsedSeconds = 0;
 
-      // Persist goal preference
       saveToStorage(STORAGE_KEYS.GOAL_MINUTES, state.goalMinutes);
 
-      // Reset display
       updateTimerDisplay();
       updateGoalProgress();
       els.timerStatus.textContent = 'Ready';
@@ -717,18 +757,11 @@ function initGoalChips() {
 function initNavigation() {
   els.navItems.forEach((item) => {
     item.addEventListener('click', () => {
-      // Update nav active
       els.navItems.forEach((n) => n.classList.remove('active'));
       item.classList.add('active');
 
-      // We only have one page (dashboard) in this implementation,
-      // but we simulate page switching for the nav
       const pageName = item.dataset.page;
-      // For now, we just animate a brief interaction
-      if (pageName === 'dashboard') {
-        // Already showing dashboard
-      } else {
-        // Show a small placeholder for other pages
+      if (pageName !== 'dashboard') {
         showPagePlaceholder(pageName);
       }
     });
@@ -736,7 +769,6 @@ function initNavigation() {
 }
 
 function showPagePlaceholder(pageName) {
-  // Toast-like placeholder
   const toast = document.createElement('div');
   toast.style.cssText = `
     position: fixed;
@@ -768,7 +800,6 @@ function showPagePlaceholder(pageName) {
 // EVENT LISTENERS
 // ============================================================
 function initEventListeners() {
-  // Start / Pause / Resume toggle
   els.btnStart.addEventListener('click', () => {
     if (state.isResting) return;
 
@@ -781,16 +812,9 @@ function initEventListeners() {
     }
   });
 
-  // Stop
   els.btnStop.addEventListener('click', stopTimer);
-
-  // Rest
   els.btnRest.addEventListener('click', enterRestMode);
-
-  // Resume from rest
   els.btnResume.addEventListener('click', exitRestMode);
-
-  // Finish from rest
   els.btnFinishRest.addEventListener('click', finishFromRest);
 }
 
@@ -801,37 +825,41 @@ function restoreTimerState() {
   const saved = loadFromStorage(STORAGE_KEYS.TIMER_STATE, null);
   if (!saved) return;
 
-  const elapsed = saved.elapsedSeconds || 0;
-  const wasRunning = saved.isRunning === true;
-  const wasPaused = saved.isPaused === true;
-
-  // Restore elapsed seconds
-  state.elapsedSeconds = elapsed;
+  state.elapsedSeconds = saved.elapsedSeconds || 0;
+  state.accumulatedSeconds = saved.accumulatedSeconds || 0;
+  state.segmentStartTimestamp = saved.segmentStartTimestamp || 0;
   state.minuteCount = saved.minuteCount || 0;
   state.lastMinuteMark = saved.lastMinuteMark || 0;
 
-  // Restore goal if it changed
+  // Restore goal
   if (saved.goalMinutes && saved.goalMinutes !== state.goalMinutes) {
     state.goalMinutes = saved.goalMinutes;
     state.goalSeconds = state.goalMinutes * 60;
   }
 
-  // Calculate time gap since last save
-  const now = Date.now();
-  const then = saved.timestamp || now;
-  const gapSeconds = Math.max(0, Math.floor((now - then) / 1000));
+  const wasRunning = saved.isRunning === true && saved.isPaused === false;
 
-  // If it was running, add the gap time and auto-restart
-  if (wasRunning && !wasPaused && elapsed > 0) {
-    // Cap gap to prevent absurd jumps (max 10 minutes)
+  if (wasRunning && state.elapsedSeconds > 0 && state.elapsedSeconds < state.goalSeconds) {
+    // Timer was running — account for the gap since last save
+    const now = Date.now();
+    const then = saved.timestamp || now;
+    const gapSeconds = Math.max(0, Math.floor((now - then) / 1000));
+
+    // Advance accumulated time by the gap (capped to 10 min)
     const cappedGap = Math.min(gapSeconds, 600);
-    state.elapsedSeconds = Math.min(elapsed + cappedGap, state.goalSeconds);
+    state.accumulatedSeconds = Math.min(
+      state.elapsedSeconds + cappedGap,
+      state.goalSeconds
+    );
+    // Reset segment start so recalcElapsed doesn't double-count
+    state.segmentStartTimestamp = now;
+    state.elapsedSeconds = state.accumulatedSeconds;
 
     // Check if goal was reached during gap
     if (state.elapsedSeconds >= state.goalSeconds) {
-      // Goal reached during gap - reset to fresh state
       clearTimerState();
       state.elapsedSeconds = 0;
+      state.accumulatedSeconds = 0;
       state.minuteCount = 0;
       state.calories = 0;
       state.steps = 0;
@@ -841,11 +869,10 @@ function restoreTimerState() {
       return;
     }
 
-    // Auto-start the timer as if it was never stopped
+    // Auto-restart the timer
     state.isRunning = true;
     state.isPaused = false;
 
-    // Update UI to running state
     els.timerStatus.textContent = 'Keep Running';
     els.btnStart.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -859,12 +886,11 @@ function restoreTimerState() {
     els.btnRest.disabled = false;
     setPulseRing(true);
 
-    // Start the interval
     state.timerInterval = setInterval(tick, 1000);
-
-  } else if (wasPaused && elapsed > 0) {
-    // Was paused — just show the elapsed time, don't restart
+  } else if (saved.isPaused === true && state.elapsedSeconds > 0) {
+    // Was paused — just show elapsed
     state.isPaused = true;
+    state.segmentStartTimestamp = 0;
 
     els.timerStatus.textContent = 'Paused';
     els.btnStart.innerHTML = `
@@ -879,7 +905,6 @@ function restoreTimerState() {
   updateTimerDisplay();
   updateGoalProgress();
 
-  // Recalculate analytics based on restored time
   state.calories = Math.round(state.elapsedSeconds * 0.12);
   state.steps = Math.round(state.elapsedSeconds * 1.6);
   if (state.elapsedSeconds > 0) {
@@ -897,34 +922,22 @@ function restoreTimerState() {
 // APP INITIALIZATION
 // ============================================================
 function initApp() {
-  // Inject SVG gradient
   injectTimerGradient();
-
-  // Initialize components
   initGoalChips();
   initNavigation();
   initEventListeners();
-
-  // Initialize chart
   initChart();
 
-  // Set initial display
   updateTimerDisplay();
   updateGoalProgress();
   updateAnalytics();
 
-  // Restore any saved timer state (after page refresh)
   restoreTimerState();
 
-  // Hide loading screen after a delay
   hideLoadingScreen();
 
-  // Log
   console.log('🏃 FitOps Running Tracker initialized');
 }
 
-// Start the app when DOM is ready
 document.addEventListener('DOMContentLoaded', initApp);
-
-// Also handle iOS safe areas
 document.documentElement.style.setProperty('--safe-bottom', 'env(safe-area-inset-bottom, 0px)');
