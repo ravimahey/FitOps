@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#FEFEF1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>FitOps - Running Tracker</title>
+  <!-- Chart.js for Weekly Progress Bar -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- ====== LOADING SCREEN ====== -->
+  <div id="loadingScreen" class="loading-screen">
+    <div class="loader-content">
+      <div class="loader-ring">
+        <svg class="loader-svg" viewBox="0 0 120 120">
+          <circle class="loader-bg" cx="60" cy="60" r="52" />
+          <circle class="loader-progress" cx="60" cy="60" r="52" />
+        </svg>
+        <div class="loader-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 5l-3-3-3 3" />
+            <path d="M9 19l3 3 3-3" />
+            <line x1="12" y1="2" x2="12" y2="9" />
+            <line x1="12" y1="15" x2="12" y2="22" />
+          </svg>
+        </div>
+      </div>
+      <p class="loader-text">FitOps</p>
+      <p class="loader-sub">Getting you ready...</p>
+    </div>
+  </div>
+
+  <!-- ====== MAIN APP CONTAINER ====== -->
+  <div id="app" class="app-container">
+    
+    <!-- ====== BACKGROUND GRADIENTS ====== -->
+    <div class="bg-gradients">
+      <div class="bg-blob blob-1"></div>
+      <div class="bg-blob blob-2"></div>
+      <div class="bg-blob blob-3"></div>
+    </div>
+
+    <!-- ====== PAGE: DASHBOARD ====== -->
+    <div id="pageDashboard" class="page active-page">
+      
+      <!-- Header -->
+      <header class="app-header">
+        <div class="header-top">
+          <div class="greeting">
+            <h1 class="greeting-title">Running</h1>
+            <p class="greeting-sub">Let's crush your goals today</p>
+          </div>
+          <div class="header-actions">
+            <button class="icon-btn" aria-label="Notifications">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 01-3.46 0" />
+              </svg>
+              <span class="notif-dot"></span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- Timer Section -->
+      <section class="timer-section">
+        <div class="timer-card glass-card">
+          <!-- Circular Progress Timer -->
+          <div class="timer-ring-container">
+            <svg class="timer-ring-svg" viewBox="0 0 200 200">
+              <circle class="timer-ring-bg" cx="100" cy="100" r="88" />
+              <circle class="timer-ring-progress" id="timerRing" cx="100" cy="100" r="88" 
+                      stroke-linecap="round" stroke-dasharray="553.1" stroke-dashoffset="0" />
+            </svg>
+            <div class="timer-display">
+              <span class="timer-value" id="timerDisplay">00:00</span>
+              <span class="timer-status" id="timerStatus">Ready</span>
+            </div>
+          </div>
+          <!-- Pulse glow ring -->
+          <div class="pulse-ring" id="pulseRing"></div>
+
+          <!-- Goal Chips -->
+          <div class="goal-chips" id="goalChips">
+            <button class="goal-chip active" data-minutes="10">10 MIN</button>
+            <button class="goal-chip" data-minutes="20">20 MIN</button>
+            <button class="goal-chip" data-minutes="30">30 MIN</button>
+            <button class="goal-chip" data-minutes="40">40 MIN</button>
+          </div>
+
+          <!-- Goal Progress Bar -->
+          <div class="goal-progress-container">
+            <div class="goal-progress-header">
+              <span class="goal-label">Goal Progress</span>
+              <span class="goal-percent" id="goalPercent">0%</span>
+            </div>
+            <div class="goal-progress-bar">
+              <div class="goal-progress-fill" id="goalProgressFill" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="action-buttons" id="actionButtons">
+            <button class="btn btn-stop" id="btnStop" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="6" y="6" width="12" height="12" rx="2" />
+              </svg>
+              <span>Stop</span>
+            </button>
+            <button class="btn btn-start" id="btnStart">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
+              <span>Start</span>
+            </button>
+            <button class="btn btn-rest" id="btnRest" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                <path d="M12 6v6l4 2" />
+              </svg>
+              <span>Rest</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Fitness Analytics Cards -->
+      <section class="analytics-section">
+        <div class="analytics-grid">
+          <!-- Calories -->
+          <div class="analytics-card glass-card-sm">
+            <div class="analytics-icon calories-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 20.79c-2.56 0-4.63-2.06-4.63-4.6 0-2.55 2.07-4.61 4.63-4.61" />
+                <path d="M12 20.79c2.56 0 4.63-2.06 4.63-4.6 0-2.55-2.07-4.61-4.63-4.61" />
+                <path d="M12 11.58V3.5" />
+                <path d="M9 6.5l3-3 3 3" />
+              </svg>
+            </div>
+            <div class="analytics-info">
+              <span class="analytics-value" id="caloriesValue">0</span>
+              <span class="analytics-label">Calories</span>
+            </div>
+          </div>
+
+          <!-- Steps -->
+          <div class="analytics-card glass-card-sm">
+            <div class="analytics-icon steps-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+              </svg>
+            </div>
+            <div class="analytics-info">
+              <span class="analytics-value" id="stepsValue">0</span>
+              <span class="analytics-label">Steps</span>
+            </div>
+          </div>
+
+          <!-- Heart Rate -->
+          <div class="analytics-card glass-card-sm">
+            <div class="analytics-icon heart-icon" id="heartIcon">
+              <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
+              </svg>
+            </div>
+            <div class="analytics-info">
+              <span class="analytics-value" id="heartRateValue">72</span>
+              <span class="analytics-label">Heart Rate</span>
+            </div>
+          </div>
+
+          <!-- Avg Pace -->
+          <div class="analytics-card glass-card-sm">
+            <div class="analytics-icon pace-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+            </div>
+            <div class="analytics-info">
+              <span class="analytics-value" id="paceValue">--'--"</span>
+              <span class="analytics-label">Avg Pace</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Weekly Running Progress -->
+      <section class="weekly-section">
+        <div class="section-header">
+          <h2 class="section-title">Weekly Progress</h2>
+          <span class="section-meta">This Week</span>
+        </div>
+        <div class="weekly-chart glass-card-sm">
+          <canvas id="weeklyChart"></canvas>
+        </div>
+      </section>
+
+    </div> <!-- End Dashboard Page -->
+
+    <!-- ====== REST MODE OVERLAY ====== -->
+    <div id="restOverlay" class="rest-overlay">
+      <div class="rest-card glass-card">
+        <div class="rest-content">
+          <div class="rest-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+              <path d="M12 6v6l4 2" />
+            </svg>
+          </div>
+          <span class="rest-countdown" id="restCountdown">00:30</span>
+          <p class="rest-text">Take a Breath</p>
+          <div class="rest-progress-bar">
+            <div class="rest-progress-fill" id="restProgressFill"></div>
+          </div>
+          <div class="rest-buttons">
+            <button class="btn btn-primary" id="btnResume">Resume</button>
+            <button class="btn btn-ghost" id="btnFinishRest">Finish</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== ONE-MINUTE NOTIFICATION ====== -->
+    <div id="minuteNotif" class="minute-notification">
+      <div class="notif-card">
+        <div class="notif-waveform" id="waveform">
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="notif-content">
+          <span class="notif-title">1 Minute Completed</span>
+          <span class="notif-time" id="notifTime">--:--</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== BOTTOM NAVIGATION ====== -->
+    <nav class="bottom-nav">
+      <button class="nav-item active" data-page="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="9" />
+          <rect x="14" y="3" width="7" height="5" />
+          <rect x="14" y="12" width="7" height="9" />
+          <rect x="3" y="16" width="7" height="5" />
+        </svg>
+        <span>Dashboard</span>
+      </button>
+      <button class="nav-item" data-page="activity">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+        </svg>
+        <span>Activity</span>
+      </button>
+      <button class="nav-item" data-page="goals">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <circle cx="12" cy="12" r="6" />
+          <circle cx="12" cy="12" r="2" />
+        </svg>
+        <span>Goals</span>
+      </button>
+      <button class="nav-item" data-page="profile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
+        <span>Profile</span>
+      </button>
+    </nav>
+
+  </div> <!-- End App Container -->
+
+  <script src="script.js"></script>
+</body>
+</html>
