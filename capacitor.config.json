@@ -1,0 +1,65 @@
+{
+  "appId": "com.nexafit.app",
+  "appName": "NexaFit",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "npmClient": "npm",
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "https",
+    "allowNavigation": []
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 3000,
+      "launchAutoHide": true,
+      "launchFadeOutDuration": 500,
+      "backgroundColor": "#0C0C0E",
+      "androidSplashResourceName": "splash",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true,
+      "layoutName": "launch_screen",
+      "useDialog": false
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0C0C0E",
+      "overlaysWebView": true
+    },
+    "Keyboard": {
+      "resize": "body",
+      "style": "DARK",
+      "resizeOnFullScreen": true
+    },
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    }
+  },
+  "android": {
+    "buildOptions": {
+      "keystorePath": null,
+      "keystorePassword": null,
+      "keystoreAlias": null,
+      "keystoreAliasPassword": null,
+      "releaseType": null
+    },
+    "flavor": "production",
+    "minSdkVersion": 24,
+    "targetSdkVersion": 34,
+    "compileSdkVersion": 34
+  },
+  "ios": {
+    "minVersion": "15.0",
+    "cordovaSwiftVersion": "5.0",
+    "contentInset": "always",
+    "allowsLinkPreview": false,
+    "scrollEnabled": false,
+    "preferredContentMode": "mobile"
+  }
+}

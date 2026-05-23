@@ -1,0 +1,52 @@
+# Dependency directories
+node_modules/
+
+# Capacitor native platform directories
+android/
+ios/
+
+# Capacitor generated files
+capacitor-cordova-android-plugins/
+capacitor-cordova-ios-plugins/
+capacitor-cordova-plugins/
+
+# Build outputs
+*.apk
+*.aab
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Keystore (Android signing)
+*.jks
+*.keystore
+*.p12
+
+# iOS
+*.xcworkspace
+xcuserdata/
+Pods/
+DerivedData/
+
+# Capacitor local config
+capacitor.config.json.local

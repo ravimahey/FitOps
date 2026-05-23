@@ -1,0 +1,49 @@
+{
+  "name": "nexafit",
+  "version": "1.0.0",
+  "description": "NexaFit — The next generation of fitness tracking. A premium, dark-mode fitness companion for runners and athletes.",
+  "main": "script.js",
+  "private": true,
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "cap:init": "npx cap init NexaFit com.nexafit.app --web-dir www",
+    "cap:add:android": "npx cap add android",
+    "cap:add:ios": "npx cap add ios",
+    "cap:sync": "npx cap sync",
+    "cap:open:android": "npx cap open android",
+    "cap:open:ios": "npx cap open ios",
+    "cap:build:android": "npx cap sync && npx cap open android",
+    "cap:build:ios": "npx cap sync && npx cap open ios",
+    "cap:run:android": "npx cap run android",
+    "cap:run:ios": "npx cap run ios",
+    "cap:copy": "npx cap copy",
+    "cap:update": "npx cap update",
+    "build:www": "mkdir -p www && copy index.html www\\ && copy style.css www\\ && copy script.js www\\ && xcopy /E /I /Y assets www\\assets\\ && xcopy /E /I /Y js www\\js\\",
+    "deploy:android": "npm run build:www && npx cap sync && npx cap open android",
+    "deploy:ios": "npm run build:www && npx cap sync && npx cap open ios"
+  },
+  "keywords": [
+    "fitness",
+    "running",
+    "tracker",
+    "capacitor",
+    "mobile",
+    "android",
+    "ios",
+    "nexafit",
+    "workout",
+    "health"
+  ],
+  "author": "NexaFit",
+  "license": "MIT",
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/ios": "^7.0.0",
+    "@capacitor/keyboard": "^7.0.0",
+    "@capacitor/push-notifications": "^7.0.0",
+    "@capacitor/splash-screen": "^7.0.0",
+    "@capacitor/status-bar": "^7.0.0"
+  }
+}
