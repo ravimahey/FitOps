@@ -247,6 +247,7 @@ function checkMinuteMilestone() {
     state.lastMinuteMark = state.elapsedSeconds;
     showMinuteNotification();
     playBeepSound();
+    vibrateMinuteMilestone();
   }
 }
 
@@ -332,6 +333,9 @@ function tick() {
 
 function startTimer() {
   if (state.isRunning || state.isResting) return;
+
+  // Initialize AudioContext on user gesture (required by iOS)
+  initAudioOnUserInteraction();
 
   state.isRunning = true;
   state.isPaused = false;
@@ -460,6 +464,7 @@ function stopTimer() {
   clearTimerState();
 
   playCompleteSound();
+  vibrateSessionComplete();
   showFinishNotification();
 }
 
@@ -546,6 +551,88 @@ function showMinuteNotification() {
 }
 
 // ============================================================
+// VIBRATION SYSTEM (iOS-compatible haptic feedback)
+// ============================================================
+/**
+ * Trigger haptic vibration feedback.
+ * - On Android: uses navigator.vibrate()
+ * - On iPhone: creates a short haptic pattern using Web Audio's oscillator
+ *   at low frequency (30-50 Hz) which iOS Safari renders as vibration
+ *   through the Taptic Engine / haptic feedback.
+ * - Also attempts the Vibration API as a fallback.
+ */
+function vibrateDevice(pattern) {
+  // Try native Vibration API first (works on Android)
+  if (navigator.vibrate) {
+    try {
+      navigator.vibrate(pattern);
+      // If vibration API succeeded, still try haptic for iPhone
+    } catch (_) {}
+  }
+
+  // For iPhone: use low-frequency oscillator as haptic feedback
+  if (audioCtx && audioCtx.state === 'running') {
+    try {
+      const now = audioCtx.currentTime;
+      const duration = typeof pattern === 'number' ? pattern / 1000 : (Array.isArray(pattern) ? pattern[0] / 1000 : 0.15);
+      
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = 40; // Low freq for haptic feel
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      osc.start(now);
+      osc.stop(now + duration + 0.05);
+    } catch (_) {}
+  }
+}
+
+function vibrateMinuteMilestone() {
+  vibrateDevice(100); // 100ms short pulse
+}
+
+function vibrateSessionComplete() {
+  // Two short bursts for completion
+  if (navigator.vibrate) {
+    try {
+      navigator.vibrate([100, 80, 100]);
+    } catch (_) {}
+  }
+  // Also try haptic for iPhone
+  if (audioCtx && audioCtx.state === 'running') {
+    try {
+      const now = audioCtx.currentTime;
+      // First burst
+      const osc1 = audioCtx.createOscillator();
+      const gain1 = audioCtx.createGain();
+      osc1.connect(gain1);
+      gain1.connect(audioCtx.destination);
+      osc1.type = 'sine';
+      osc1.frequency.value = 40;
+      gain1.gain.setValueAtTime(0.15, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+      osc1.start(now);
+      osc1.stop(now + 0.1);
+      
+      // Second burst
+      const osc2 = audioCtx.createOscillator();
+      const gain2 = audioCtx.createGain();
+      osc2.connect(gain2);
+      gain2.connect(audioCtx.destination);
+      osc2.type = 'sine';
+      osc2.frequency.value = 40;
+      gain2.gain.setValueAtTime(0.15, now + 0.18);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+      osc2.start(now + 0.18);
+      osc2.stop(now + 0.28);
+    } catch (_) {}
+  }
+}
+
+// ============================================================
 // SOUND SYSTEM (iOS-compatible Web Audio API)
 // ============================================================
 let audioCtx = null;
@@ -562,6 +649,92 @@ function ensureAudioContext() {
     audioCtx.resume();
   }
   return !!audioCtx;
+}
+
+/**
+ * Initialize AudioContext on a user interaction (tap/click).
+ * iOS requires the AudioContext to be created or resumed from a user gesture.
+ * This must be called from event handlers like button clicks.
+ */
+function initAudioOnUserInteraction() {
+  const ready = ensureAudioContext();
+  if (ready && audioCtx) {
+    // Create a short silent buffer to fully unlock audio on iOS
+    try {
+      const silentSource = audioCtx.createBufferSource();
+      const silentBuffer = audioCtx.createBuffer(1, 1, 44100);
+      silentSource.buffer = silentBuffer;
+      silentSource.connect(audioCtx.destination);
+      silentSource.start(0);
+    } catch (_) {}
+  }
+}
+
+/**
+ * Play a short synthesized beep using Web Audio oscillators.
+ * This is more reliable on iOS than fetching/decoding MP3 files,
+ * especially after the AudioContext has been unlocked by a user gesture.
+ */
+function playSynthesizedBeep(frequency, duration, volume) {
+  const ctxReady = ensureAudioContext();
+  if (!ctxReady || !audioCtx) return false;
+
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.type = 'sine';
+    osc.frequency.value = frequency;
+    gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.start(0);
+    osc.stop(audioCtx.currentTime + duration);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Play a short melody (two-tone chime) for session complete using oscillators.
+ * More reliable on iOS than MP3 decoding.
+ */
+function playSynthesizedComplete() {
+  const ctxReady = ensureAudioContext();
+  if (!ctxReady || !audioCtx) return false;
+
+  try {
+    const now = audioCtx.currentTime;
+
+    // First note
+    const osc1 = audioCtx.createOscillator();
+    const gain1 = audioCtx.createGain();
+    osc1.connect(gain1);
+    gain1.connect(audioCtx.destination);
+    osc1.type = 'sine';
+    osc1.frequency.value = 587.33; // D5
+    gain1.gain.setValueAtTime(0.3, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    osc1.start(now);
+    osc1.stop(now + 0.3);
+
+    // Second note (higher)
+    const osc2 = audioCtx.createOscillator();
+    const gain2 = audioCtx.createGain();
+    osc2.connect(gain2);
+    gain2.connect(audioCtx.destination);
+    osc2.type = 'sine';
+    osc2.frequency.value = 880; // A5
+    gain2.gain.setValueAtTime(0.3, now + 0.15);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    osc2.start(now + 0.15);
+    osc2.stop(now + 0.5);
+
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 function playMP3(url) {
@@ -581,6 +754,7 @@ function playMP3(url) {
         source.start(0);
       })
       .catch(() => {
+        // Fallback: try oscillator
         try {
           const osc = audioCtx.createOscillator();
           const gain = audioCtx.createGain();
@@ -604,11 +778,20 @@ function playMP3(url) {
 }
 
 function playBeepSound() {
-  playMP3('assets/sounds/s4.mp3');
+  // Use synthesized beep first (reliable on iOS since AudioContext was unlocked
+  // via user gesture in startTimer). Falls back to MP3 if synthesis fails.
+  const played = playSynthesizedBeep(880, 0.2, 0.3);
+  if (!played) {
+    playMP3('assets/sounds/s4.mp3');
+  }
 }
 
 function playCompleteSound() {
-  playMP3('assets/sounds/complete.mp3');
+  // Try synthesized chime first (reliable on iOS)
+  const played = playSynthesizedComplete();
+  if (!played) {
+    playMP3('assets/sounds/complete.mp3');
+  }
 }
 
 // ============================================================
