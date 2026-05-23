@@ -551,32 +551,45 @@ function showMinuteNotification() {
 }
 
 // ============================================================
-// VIBRATION SYSTEM (cross-platform haptic feedback)
+// VIBRATION SYSTEM (cross-platform)
 // ============================================================
+/**
+ * Trigger vibration/haptic feedback.
+ * 
+ * Android: Uses navigator.vibrate() - works on all Android browsers.
+ * iPhone Safari 13+: navigator.vibrate() is available.
+ * iPhone Chrome: navigator.vibrate() is NOT available (WKWebView limitation).
+ *   - Fallback: plays a very short, sharp audio click transient that
+ *     feels like a vibration/tap to the user.
+ */
 function vibrateDevice(pattern) {
-  // Android: native Vibration API
+  // Android / iPhone Safari 13+: native Vibration API
   if (navigator.vibrate) {
     try {
       navigator.vibrate(pattern);
+      return;
     } catch (_) {}
   }
 
-  // iOS (Safari/Chrome): low-frequency oscillator haptic feedback
+  // iPhone Chrome (WKWebView): no navigator.vibrate
+  // Play a sharp audio "click" that feels like haptic feedback
   if (audioCtx && audioCtx.state === 'running') {
     try {
       const now = audioCtx.currentTime;
-      const duration = typeof pattern === 'number' ? pattern / 1000 : (Array.isArray(pattern) ? pattern[0] / 1000 : 0.15);
+      const duration = typeof pattern === 'number' ? pattern / 1000 : 0.15;
       
+      // Create a very short, sharp click using a high-frequency oscillator
+      // with rapid attack/decay - feels like a tap
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.connect(gain);
       gain.connect(audioCtx.destination);
-      osc.type = 'sine';
-      osc.frequency.value = 40;
-      gain.gain.setValueAtTime(0.15, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      osc.type = 'square'; // Square wave = sharper, more percussive
+      osc.frequency.value = 200;
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + Math.min(duration, 0.12));
       osc.start(now);
-      osc.stop(now + duration + 0.05);
+      osc.stop(now + Math.min(duration, 0.12) + 0.01);
     } catch (_) {}
   }
 }
@@ -588,38 +601,44 @@ function vibrateMinuteMilestone() {
 function vibrateSessionComplete() {
   // Two short bursts
   if (navigator.vibrate) {
-    try { navigator.vibrate([100, 80, 100]); } catch (_) {}
+    try {
+      navigator.vibrate([100, 80, 100]);
+      return;
+    } catch (_) {}
   }
+  // iPhone fallback: two sharp clicks
   if (audioCtx && audioCtx.state === 'running') {
     try {
       const now = audioCtx.currentTime;
+      // First click
       const osc1 = audioCtx.createOscillator();
       const gain1 = audioCtx.createGain();
       osc1.connect(gain1);
       gain1.connect(audioCtx.destination);
-      osc1.type = 'sine';
-      osc1.frequency.value = 40;
-      gain1.gain.setValueAtTime(0.15, now);
+      osc1.type = 'square';
+      osc1.frequency.value = 200;
+      gain1.gain.setValueAtTime(0.12, now);
       gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
       osc1.start(now);
-      osc1.stop(now + 0.1);
+      osc1.stop(now + 0.11);
       
+      // Second click
       const osc2 = audioCtx.createOscillator();
       const gain2 = audioCtx.createGain();
       osc2.connect(gain2);
       gain2.connect(audioCtx.destination);
-      osc2.type = 'sine';
-      osc2.frequency.value = 40;
-      gain2.gain.setValueAtTime(0.15, now + 0.18);
+      osc2.type = 'square';
+      osc2.frequency.value = 200;
+      gain2.gain.setValueAtTime(0.12, now + 0.18);
       gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
       osc2.start(now + 0.18);
-      osc2.stop(now + 0.28);
+      osc2.stop(now + 0.29);
     } catch (_) {}
   }
 }
 
 // ============================================================
-// SOUND SYSTEM (iOS-compatible - dual approach)
+// SOUND SYSTEM (iOS-compatible)
 // ============================================================
 // Pre-unlocked HTML Audio elements (reliable on iOS Chrome/Safari
 // once they've been triggered during a user gesture)
@@ -645,8 +664,6 @@ function ensureAudioContext() {
 
 /**
  * Keep the AudioContext alive on iOS by playing silent buffers periodically.
- * iOS aggressively suspends AudioContext when not in a user gesture, but
- * we can prevent suspension by keeping it fed with audio data.
  */
 function startAudioKeepAlive() {
   if (audioKeepAliveInterval) return;
@@ -673,9 +690,6 @@ function stopAudioKeepAlive() {
 /**
  * Initialize AudioContext and pre-unlock HTML Audio elements.
  * MUST be called from a user gesture handler (Start button click).
- * This is the key fix for iOS Chrome — pre-loading Audio elements
- * and playing/pausing them during a gesture unlocks them for
- * subsequent .play() calls from non-gesture contexts.
  */
 function initAudioOnUserInteraction() {
   // Initialize AudioContext
@@ -694,36 +708,32 @@ function initAudioOnUserInteraction() {
   }
 
   // Pre-load and unlock HTML Audio elements for iOS Chrome/Safari.
-  // This is the most reliable approach: once unlocked in a user gesture,
-  // Audio.play() works from timers and callbacks on iOS.
+  // Once unlocked during a user gesture, Audio.play() works from timers.
   if (!beepAudio) {
     beepAudio = new Audio('assets/sounds/s4.mp3');
     beepAudio.volume = 0.3;
-    // Play and immediately pause to unlock the audio element
+    beepAudio.load();
     beepAudio.play().then(() => {
       beepAudio.pause();
       beepAudio.currentTime = 0;
     }).catch(() => {
-      // iOS may still block, but we'll fall back to oscillator
-      beepAudio = null;
+      // Don't null out - element may work on subsequent plays
     });
   }
 
   if (!completeAudio) {
     completeAudio = new Audio('assets/sounds/complete.mp3');
     completeAudio.volume = 0.5;
+    completeAudio.load();
     completeAudio.play().then(() => {
       completeAudio.pause();
       completeAudio.currentTime = 0;
-    }).catch(() => {
-      completeAudio = null;
-    });
+    }).catch(() => {});
   }
 }
 
 /**
  * Play beep using pre-unlocked HTML Audio element.
- * This works reliably on iOS Chrome once unlocked by a user gesture.
  */
 function playBeepHTML() {
   if (!beepAudio) return false;
@@ -854,15 +864,11 @@ function playMP3(url) {
 }
 
 function playBeepSound() {
-  // Strategy: try each method in order until one succeeds
-  //
   // 1. Pre-unlocked HTML Audio element (most reliable on iOS Chrome)
-  //    Works because we unlocked it in initAudioOnUserInteraction()
-  // 2. Synthesized oscillator beep (backup for Android / desktop)
-  // 3. MP3 fetch/decode (last resort)
-  
   if (playBeepHTML()) return;
+  // 2. Synthesized oscillator beep (backup for Android / desktop)
   if (playSynthesizedBeep(880, 0.2, 0.3)) return;
+  // 3. MP3 fetch/decode (last resort)
   playMP3('assets/sounds/s4.mp3');
 }
 
