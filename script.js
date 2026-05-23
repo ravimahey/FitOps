@@ -551,26 +551,17 @@ function showMinuteNotification() {
 }
 
 // ============================================================
-// VIBRATION SYSTEM (iOS-compatible haptic feedback)
+// VIBRATION SYSTEM (cross-platform haptic feedback)
 // ============================================================
-/**
- * Trigger haptic vibration feedback.
- * - On Android: uses navigator.vibrate()
- * - On iPhone: creates a short haptic pattern using Web Audio's oscillator
- *   at low frequency (30-50 Hz) which iOS Safari renders as vibration
- *   through the Taptic Engine / haptic feedback.
- * - Also attempts the Vibration API as a fallback.
- */
 function vibrateDevice(pattern) {
-  // Try native Vibration API first (works on Android)
+  // Android: native Vibration API
   if (navigator.vibrate) {
     try {
       navigator.vibrate(pattern);
-      // If vibration API succeeded, still try haptic for iPhone
     } catch (_) {}
   }
 
-  // For iPhone: use low-frequency oscillator as haptic feedback
+  // iOS (Safari/Chrome): low-frequency oscillator haptic feedback
   if (audioCtx && audioCtx.state === 'running') {
     try {
       const now = audioCtx.currentTime;
@@ -581,7 +572,7 @@ function vibrateDevice(pattern) {
       osc.connect(gain);
       gain.connect(audioCtx.destination);
       osc.type = 'sine';
-      osc.frequency.value = 40; // Low freq for haptic feel
+      osc.frequency.value = 40;
       gain.gain.setValueAtTime(0.15, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
       osc.start(now);
@@ -591,21 +582,17 @@ function vibrateDevice(pattern) {
 }
 
 function vibrateMinuteMilestone() {
-  vibrateDevice(100); // 100ms short pulse
+  vibrateDevice(100);
 }
 
 function vibrateSessionComplete() {
-  // Two short bursts for completion
+  // Two short bursts
   if (navigator.vibrate) {
-    try {
-      navigator.vibrate([100, 80, 100]);
-    } catch (_) {}
+    try { navigator.vibrate([100, 80, 100]); } catch (_) {}
   }
-  // Also try haptic for iPhone
   if (audioCtx && audioCtx.state === 'running') {
     try {
       const now = audioCtx.currentTime;
-      // First burst
       const osc1 = audioCtx.createOscillator();
       const gain1 = audioCtx.createGain();
       osc1.connect(gain1);
@@ -617,7 +604,6 @@ function vibrateSessionComplete() {
       osc1.start(now);
       osc1.stop(now + 0.1);
       
-      // Second burst
       const osc2 = audioCtx.createOscillator();
       const gain2 = audioCtx.createGain();
       osc2.connect(gain2);
@@ -633,9 +619,15 @@ function vibrateSessionComplete() {
 }
 
 // ============================================================
-// SOUND SYSTEM (iOS-compatible Web Audio API)
+// SOUND SYSTEM (iOS-compatible - dual approach)
 // ============================================================
+// Pre-unlocked HTML Audio elements (reliable on iOS Chrome/Safari
+// once they've been triggered during a user gesture)
+let beepAudio = null;
+let completeAudio = null;
+
 let audioCtx = null;
+let audioKeepAliveInterval = null;
 
 function ensureAudioContext() {
   if (!audioCtx) {
@@ -652,14 +644,43 @@ function ensureAudioContext() {
 }
 
 /**
- * Initialize AudioContext on a user interaction (tap/click).
- * iOS requires the AudioContext to be created or resumed from a user gesture.
- * This must be called from event handlers like button clicks.
+ * Keep the AudioContext alive on iOS by playing silent buffers periodically.
+ * iOS aggressively suspends AudioContext when not in a user gesture, but
+ * we can prevent suspension by keeping it fed with audio data.
+ */
+function startAudioKeepAlive() {
+  if (audioKeepAliveInterval) return;
+  audioKeepAliveInterval = setInterval(() => {
+    if (audioCtx && audioCtx.state === 'running') {
+      try {
+        const source = audioCtx.createBufferSource();
+        const buffer = audioCtx.createBuffer(1, 1, 44100);
+        source.buffer = buffer;
+        source.connect(audioCtx.destination);
+        source.start(0);
+      } catch (_) {}
+    }
+  }, 500);
+}
+
+function stopAudioKeepAlive() {
+  if (audioKeepAliveInterval) {
+    clearInterval(audioKeepAliveInterval);
+    audioKeepAliveInterval = null;
+  }
+}
+
+/**
+ * Initialize AudioContext and pre-unlock HTML Audio elements.
+ * MUST be called from a user gesture handler (Start button click).
+ * This is the key fix for iOS Chrome — pre-loading Audio elements
+ * and playing/pausing them during a gesture unlocks them for
+ * subsequent .play() calls from non-gesture contexts.
  */
 function initAudioOnUserInteraction() {
+  // Initialize AudioContext
   const ready = ensureAudioContext();
   if (ready && audioCtx) {
-    // Create a short silent buffer to fully unlock audio on iOS
     try {
       const silentSource = audioCtx.createBufferSource();
       const silentBuffer = audioCtx.createBuffer(1, 1, 44100);
@@ -667,13 +688,72 @@ function initAudioOnUserInteraction() {
       silentSource.connect(audioCtx.destination);
       silentSource.start(0);
     } catch (_) {}
+    
+    // Start keepalive to prevent iOS from suspending the AudioContext
+    startAudioKeepAlive();
+  }
+
+  // Pre-load and unlock HTML Audio elements for iOS Chrome/Safari.
+  // This is the most reliable approach: once unlocked in a user gesture,
+  // Audio.play() works from timers and callbacks on iOS.
+  if (!beepAudio) {
+    beepAudio = new Audio('assets/sounds/s4.mp3');
+    beepAudio.volume = 0.3;
+    // Play and immediately pause to unlock the audio element
+    beepAudio.play().then(() => {
+      beepAudio.pause();
+      beepAudio.currentTime = 0;
+    }).catch(() => {
+      // iOS may still block, but we'll fall back to oscillator
+      beepAudio = null;
+    });
+  }
+
+  if (!completeAudio) {
+    completeAudio = new Audio('assets/sounds/complete.mp3');
+    completeAudio.volume = 0.5;
+    completeAudio.play().then(() => {
+      completeAudio.pause();
+      completeAudio.currentTime = 0;
+    }).catch(() => {
+      completeAudio = null;
+    });
+  }
+}
+
+/**
+ * Play beep using pre-unlocked HTML Audio element.
+ * This works reliably on iOS Chrome once unlocked by a user gesture.
+ */
+function playBeepHTML() {
+  if (!beepAudio) return false;
+  try {
+    beepAudio.currentTime = 0;
+    const p = beepAudio.play();
+    if (p && p.catch) p.catch(() => {});
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Play complete sound using pre-unlocked HTML Audio element.
+ */
+function playCompleteHTML() {
+  if (!completeAudio) return false;
+  try {
+    completeAudio.currentTime = 0;
+    const p = completeAudio.play();
+    if (p && p.catch) p.catch(() => {});
+    return true;
+  } catch (_) {
+    return false;
   }
 }
 
 /**
  * Play a short synthesized beep using Web Audio oscillators.
- * This is more reliable on iOS than fetching/decoding MP3 files,
- * especially after the AudioContext has been unlocked by a user gesture.
  */
 function playSynthesizedBeep(frequency, duration, volume) {
   const ctxReady = ensureAudioContext();
@@ -697,8 +777,7 @@ function playSynthesizedBeep(frequency, duration, volume) {
 }
 
 /**
- * Play a short melody (two-tone chime) for session complete using oscillators.
- * More reliable on iOS than MP3 decoding.
+ * Play a short melody (two-tone chime) for session complete.
  */
 function playSynthesizedComplete() {
   const ctxReady = ensureAudioContext();
@@ -707,25 +786,23 @@ function playSynthesizedComplete() {
   try {
     const now = audioCtx.currentTime;
 
-    // First note
     const osc1 = audioCtx.createOscillator();
     const gain1 = audioCtx.createGain();
     osc1.connect(gain1);
     gain1.connect(audioCtx.destination);
     osc1.type = 'sine';
-    osc1.frequency.value = 587.33; // D5
+    osc1.frequency.value = 587.33;
     gain1.gain.setValueAtTime(0.3, now);
     gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
     osc1.start(now);
     osc1.stop(now + 0.3);
 
-    // Second note (higher)
     const osc2 = audioCtx.createOscillator();
     const gain2 = audioCtx.createGain();
     osc2.connect(gain2);
     gain2.connect(audioCtx.destination);
     osc2.type = 'sine';
-    osc2.frequency.value = 880; // A5
+    osc2.frequency.value = 880;
     gain2.gain.setValueAtTime(0.3, now + 0.15);
     gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
     osc2.start(now + 0.15);
@@ -754,7 +831,6 @@ function playMP3(url) {
         source.start(0);
       })
       .catch(() => {
-        // Fallback: try oscillator
         try {
           const osc = audioCtx.createOscillator();
           const gain = audioCtx.createGain();
@@ -778,20 +854,22 @@ function playMP3(url) {
 }
 
 function playBeepSound() {
-  // Use synthesized beep first (reliable on iOS since AudioContext was unlocked
-  // via user gesture in startTimer). Falls back to MP3 if synthesis fails.
-  const played = playSynthesizedBeep(880, 0.2, 0.3);
-  if (!played) {
-    playMP3('assets/sounds/s4.mp3');
-  }
+  // Strategy: try each method in order until one succeeds
+  //
+  // 1. Pre-unlocked HTML Audio element (most reliable on iOS Chrome)
+  //    Works because we unlocked it in initAudioOnUserInteraction()
+  // 2. Synthesized oscillator beep (backup for Android / desktop)
+  // 3. MP3 fetch/decode (last resort)
+  
+  if (playBeepHTML()) return;
+  if (playSynthesizedBeep(880, 0.2, 0.3)) return;
+  playMP3('assets/sounds/s4.mp3');
 }
 
 function playCompleteSound() {
-  // Try synthesized chime first (reliable on iOS)
-  const played = playSynthesizedComplete();
-  if (!played) {
-    playMP3('assets/sounds/complete.mp3');
-  }
+  if (playCompleteHTML()) return;
+  if (playSynthesizedComplete()) return;
+  playMP3('assets/sounds/complete.mp3');
 }
 
 // ============================================================
