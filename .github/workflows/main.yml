@@ -1,0 +1,22 @@
+name: Test Variables to Env
+
+on:
+  workflow_dispatch:
+
+jobs:
+  export-vars:
+    runs-on: ubuntu-latest
+
+    environment: dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create .env from GitHub Variables
+        env:
+          ALL_GITHUB_SECRETS_JSON: ${{ toJson(secrets) }}
+          ALL_GITHUB_VARS_JSON: ${{ toJson(vars) }}
+        run: |
+          echo $ALL_GITHUB_SECRETS_JSON
+          echo $ALL_GITHUB_VARS_JSON
